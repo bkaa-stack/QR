@@ -37,29 +37,38 @@ jobs:
       # 4. Cai Android SDK thu cong (fix loi build-tools not found)
       - name: Install Android SDK
         run: |
-          # Tai Android command-line tools
+          # Buoc 1: Dam bao Java 17 la default (sdkmanager moi can Java 17)
+          sudo update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          export PATH=$JAVA_HOME/bin:$PATH
+          java -version
+ 
+          # Buoc 2: Tai Android command-line tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
           mkdir -p $HOME/android-sdk/cmdline-tools
           unzip -q cmdtools.zip -d $HOME/android-sdk/cmdline-tools
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
  
-          # Thiet lap bien moi truong
+          # Buoc 3: Thiet lap bien moi truong SDK
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
  
-          # Accept tat ca license
+          # Buoc 4: Accept tat ca license
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
  
-          # Cai build-tools, platform-tools, platform
+          # Buoc 5: Cai build-tools, platform-tools, platform
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "build-tools;34.0.0" \
             "platform-tools" \
             "platforms;android-33"
  
+          # Buoc 6: Luu vao GITHUB_ENV de cac step sau dung
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
           echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
  
       # 5. Cai Buildozer + Cython
       - name: Install Buildozer and Cython
