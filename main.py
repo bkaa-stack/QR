@@ -1,6 +1,6 @@
 """
 QR Code & Barcode Scanner - Android App
-Dung Kivy Camera widget + zxingcpp de decode QR/Barcode.
+Dung Android Intent de quet QR/Barcode (ZXing app) + xuat Excel.
 Build: buildozer android debug
 """
  
@@ -11,10 +11,10 @@ import threading
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.camera import Camera
 from kivy.clock import Clock
 from kivy.utils import platform
-from kivy.graphics.texture import Texture
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ListProperty
  
 try:
     import openpyxl
@@ -23,15 +23,19 @@ try:
 except ImportError:
     OPENPYXL_OK = False
  
-try:
-    import zxingcpp
-    ZXING_OK = True
-except ImportError:
-    ZXING_OK = False
+# Android camera / intent imports
+if platform == "android":
+    from android.runnable import run_on_ui_thread
+    from jnius import autoclass, cast
+    PythonActivity = autoclass("org.kivy.android.PythonActivity")
+    Intent         = autoclass("android.content.Intent")
+    Uri            = autoclass("android.net.Uri")
+    BUILD_VERSION  = autoclass("android.os.Build$VERSION")
+    ANDROID_OK     = True
+else:
+    ANDROID_OK = False
  
 KV = """
-#:import MDApp kivymd.app.MDApp
- 
 ScreenManager:
     id: sm
     ScanScreen:
@@ -42,18 +46,12 @@ ScreenManager:
 <ScanScreen>:
     BoxLayout:
         orientation: "vertical"
-        canvas.before:
-            Color:
-                rgba: 0.96, 0.96, 0.96, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
  
-        # Top bar
+        # Header
         BoxLayout:
             size_hint_y: None
             height: "56dp"
-            padding: "8dp"
+            padding: "12dp", "8dp"
             spacing: "8dp"
             canvas.before:
                 Color:
@@ -61,13 +59,11 @@ ScreenManager:
                 Rectangle:
                     pos: self.pos
                     size: self.size
- 
             Label:
                 text: "QR & Barcode Scanner"
                 font_size: "18sp"
                 bold: True
                 color: 1, 1, 1, 1
- 
             Button:
                 text: "Danh sach"
                 size_hint_x: None
@@ -75,36 +71,48 @@ ScreenManager:
                 background_color: 0.263, 0.627, 0.278, 1
                 on_release: app.go_list()
  
-        # Camera
-        Camera:
-            id: camera
-            resolution: (640, 480)
-            play: True
- 
-        # Bottom bar
+        # Center: scan button
         BoxLayout:
-            size_hint_y: None
-            height: "52dp"
-            padding: "8dp", "4dp"
-            spacing: "8dp"
-            canvas.before:
-                Color:
-                    rgba: 1, 1, 1, 1
-                Rectangle:
-                    pos: self.pos
-                    size: self.size
+            orientation: "vertical"
+            padding: "24dp"
+            spacing: "16dp"
+ 
+            Label:
+                text: "Nhan nut de quet ma QR / Barcode"
+                font_size: "16sp"
+                color: 0.3, 0.3, 0.3, 1
+                halign: "center"
+                text_size: self.size
+ 
+            Button:
+                text: "QUET MA QR / BARCODE"
+                font_size: "18sp"
+                bold: True
+                size_hint_y: None
+                height: "80dp"
+                background_color: 0.098, 0.463, 0.824, 1
+                on_release: app.start_scan()
  
             Label:
                 id: scan_status
                 text: "Chua quet ma nao"
-                color: 0.46, 0.46, 0.46, 1
                 font_size: "14sp"
+                color: 0.46, 0.46, 0.46, 1
+                halign: "center"
+                text_size: self.size
+ 
+            Label:
+                text: "* Can cai ZXing Barcode Scanner tren dien thoai"
+                font_size: "12sp"
+                color: 0.7, 0.5, 0.1, 1
+                halign: "center"
+                text_size: self.size
  
 <ListScreen>:
     BoxLayout:
         orientation: "vertical"
  
-        # Top bar
+        # Header
         BoxLayout:
             size_hint_y: None
             height: "56dp"
@@ -116,28 +124,24 @@ ScreenManager:
                 Rectangle:
                     pos: self.pos
                     size: self.size
- 
             Button:
-                text: "<  Quay lai"
+                text: "< Quay lai"
                 size_hint_x: None
-                width: "100dp"
+                width: "90dp"
                 background_color: 0, 0, 0, 0
                 color: 1, 1, 1, 1
                 on_release: app.go_scan()
- 
             Label:
                 text: "Danh sach QR"
                 font_size: "18sp"
                 bold: True
                 color: 1, 1, 1, 1
- 
             Button:
                 text: "Xuat Excel"
                 size_hint_x: None
                 width: "110dp"
                 background_color: 0.263, 0.627, 0.278, 1
                 on_release: app.export_excel()
- 
             Button:
                 text: "Xoa het"
                 size_hint_x: None
@@ -152,10 +156,10 @@ ScreenManager:
                 cols: 1
                 size_hint_y: None
                 height: self.minimum_height
-                spacing: "2dp"
+                spacing: "1dp"
                 padding: "4dp"
  
-        # Footer count
+        # Footer
         BoxLayout:
             size_hint_y: None
             height: "36dp"
@@ -168,7 +172,7 @@ ScreenManager:
                     size: self.size
             Label:
                 id: count_label
-                text: "0 ma QR"
+                text: "0 ma"
                 color: 0.46, 0.46, 0.46, 1
                 font_size: "13sp"
                 halign: "left"
@@ -176,8 +180,8 @@ ScreenManager:
  
 <QRItem>:
     size_hint_y: None
-    height: "56dp"
-    padding: "12dp", "4dp"
+    height: "52dp"
+    padding: "10dp", "4dp"
     spacing: "8dp"
     canvas.before:
         Color:
@@ -188,10 +192,12 @@ ScreenManager:
     Label:
         text: root.idx_text
         size_hint_x: None
-        width: "40dp"
+        width: "36dp"
         color: 0.098, 0.463, 0.824, 1
         bold: True
         font_size: "13sp"
+        halign: "center"
+        text_size: self.size
     Label:
         text: root.qr_text
         color: 0.13, 0.13, 0.13, 1
@@ -201,7 +207,7 @@ ScreenManager:
     Label:
         text: root.time_text
         size_hint_x: None
-        width: "150dp"
+        width: "145dp"
         color: 0.46, 0.46, 0.46, 1
         font_size: "11sp"
         halign: "right"
@@ -217,11 +223,6 @@ class ListScreen(Screen):
     pass
  
  
-# Simple list item widget
-from kivy.uix.boxlayout import BoxLayout
-from kivy.properties import StringProperty, ListProperty
- 
- 
 class QRItem(BoxLayout):
     idx_text  = StringProperty("")
     qr_text   = StringProperty("")
@@ -231,14 +232,9 @@ class QRItem(BoxLayout):
  
 class QRScanApp(App):
     def build(self):
-        self.scan_data  = []
-        self.seen_qrs   = set()
-        self._scanning  = False
-        self._dialog    = None
-        root = Builder.load_string(KV)
-        # Start scan loop
-        Clock.schedule_interval(self._scan_frame, 1.0 / 10)  # 10 fps
-        return root
+        self.scan_data = []
+        self.seen_qrs  = set()
+        return Builder.load_string(KV)
  
     def go_list(self):
         self.root.current = "list"
@@ -246,30 +242,56 @@ class QRScanApp(App):
     def go_scan(self):
         self.root.current = "scan"
  
-    # ── Scan loop ─────────────────────────────────────────────────────────────
-    def _scan_frame(self, dt):
-        if not ZXING_OK:
+    # ── Scan via Android Intent (ZXing) ───────────────────────────────────────
+    def start_scan(self):
+        if not ANDROID_OK:
+            # Desktop test: nhap thu cong
+            self._show_manual_input()
             return
         try:
-            cam = self.root.get_screen("scan").ids.camera
-            if not cam.play:
-                return
-            tex = cam.texture
-            if tex is None:
-                return
-            # Convert texture to bytes and decode
-            import numpy as np
-            from PIL import Image as PILImage
-            buf = tex.pixels
-            img_arr = np.frombuffer(buf, dtype=np.uint8).reshape(
-                tex.height, tex.width, 4)
-            # zxingcpp expects RGB
-            rgb = img_arr[:, :, :3]
-            results = zxingcpp.read_barcodes(rgb)
-            for r in results:
-                self._register_code(r.text, r.format.name)
-        except Exception:
-            pass
+            activity = PythonActivity.mActivity
+            intent   = Intent("com.google.zxing.client.android.SCAN")
+            intent.putExtra("SCAN_MODE", "QR_CODE_MODE,PRODUCT_MODE")
+            activity.startActivityForResult(intent, 0)
+            # Ket qua se duoc xu ly trong on_activity_result
+            activity.bind(on_activity_result=self._on_scan_result)
+        except Exception as e:
+            self._update_status(f"Loi: {e}\nCan cai ZXing Barcode Scanner")
+ 
+    def _on_scan_result(self, requestCode, resultCode, data):
+        RESULT_OK = -1
+        if resultCode == RESULT_OK and data is not None:
+            result = data.getStringExtra("SCAN_RESULT")
+            fmt    = data.getStringExtra("SCAN_RESULT_FORMAT") or "QRCODE"
+            if result:
+                Clock.schedule_once(
+                    lambda _: self._register_code(result, fmt), 0)
+ 
+    # ── Desktop fallback: manual input popup ──────────────────────────────────
+    def _show_manual_input(self):
+        from kivy.uix.popup import Popup
+        from kivy.uix.textinput import TextInput
+        from kivy.uix.button import Button
+ 
+        box   = BoxLayout(orientation="vertical", padding=12, spacing=8)
+        ti    = TextInput(hint_text="Nhap noi dung ma QR...",
+                          multiline=False, size_hint_y=None, height="44dp")
+        btn   = Button(text="Them", size_hint_y=None, height="44dp",
+                       background_color=(0.098, 0.463, 0.824, 1))
+        box.add_widget(ti)
+        box.add_widget(btn)
+ 
+        popup = Popup(title="Nhap ma QR (test)",
+                      content=box, size_hint=(0.9, 0.35))
+ 
+        def _add(*_):
+            if ti.text.strip():
+                self._register_code(ti.text.strip(), "MANUAL")
+            popup.dismiss()
+ 
+        btn.bind(on_release=_add)
+        ti.bind(on_text_validate=_add)
+        popup.open()
  
     # ── Data ──────────────────────────────────────────────────────────────────
     def _register_code(self, data: str, code_type: str = "QRCODE"):
@@ -280,33 +302,37 @@ class QRScanApp(App):
         idx = len(self.scan_data) + 1
         self.scan_data.append({"index": idx, "type": code_type,
                                 "qr": data, "time": now})
+        self._update_status(f"Da quet {idx} ma")
  
-        # Update scan status
-        lbl = self.root.get_screen("scan").ids.scan_status
-        lbl.text = f"Da quet {idx} ma"
- 
-        # Add row to list
         item = QRItem(
             idx_text  = str(idx),
-            qr_text   = data[:55] + ("..." if len(data) > 55 else ""),
+            qr_text   = data[:50] + ("..." if len(data) > 50 else ""),
             time_text = now,
             bg_color  = [0.89, 0.95, 1, 1] if idx % 2 == 0 else [1, 1, 1, 1])
  
         self.root.get_screen("list").ids.qr_list.add_widget(item)
         self.root.get_screen("list").ids.count_label.text = f"{idx} ma"
  
+    def _update_status(self, msg):
+        try:
+            self.root.get_screen("scan").ids.scan_status.text = msg
+        except Exception:
+            pass
+ 
     def clear_all(self):
         self.scan_data.clear()
         self.seen_qrs.clear()
         self.root.get_screen("list").ids.qr_list.clear_widgets()
         self.root.get_screen("list").ids.count_label.text = "0 ma"
-        self.root.get_screen("scan").ids.scan_status.text = "Chua quet ma nao"
+        self._update_status("Chua quet ma nao")
  
     # ── Excel export ──────────────────────────────────────────────────────────
     def export_excel(self):
         if not OPENPYXL_OK:
+            self._toast("Thieu openpyxl!")
             return
         if not self.scan_data:
+            self._toast("Chua co du lieu.")
             return
         threading.Thread(target=self._write_excel, daemon=True).start()
  
@@ -345,7 +371,7 @@ class QRScanApp(App):
             ws["A3"] = "Tong so ma:"
             ws["B3"] = len(self.scan_data)
  
-            # Header row 5: STT | QRCode | Time
+            # Header: STT | QRCode | Time
             for col, h in enumerate(["STT", "QRCode", "Time"], 1):
                 cell = ws.cell(row=5, column=col, value=h)
                 cell.font      = hdr_font
@@ -373,22 +399,19 @@ class QRScanApp(App):
             ws.freeze_panes = "A6"
             wb.save(path)
             Clock.schedule_once(
-                lambda _: self._show_toast(f"Da luu: {fname}"), 0)
+                lambda _: self._toast(f"Da luu: {fname}"), 0)
         except Exception as ex:
             Clock.schedule_once(
-                lambda _: self._show_toast(f"Loi: {ex}"), 0)
+                lambda _: self._toast(f"Loi: {ex}"), 0)
  
-    def _show_toast(self, msg):
-        # Simple toast using a popup
+    def _toast(self, msg):
         from kivy.uix.popup import Popup
         from kivy.uix.label import Label
-        p = Popup(title="", content=Label(text=msg),
-                  size_hint=(0.8, 0.2), auto_dismiss=True)
+        p = Popup(title="Thong bao",
+                  content=Label(text=msg, halign="center"),
+                  size_hint=(0.85, 0.22), auto_dismiss=True)
         p.open()
         Clock.schedule_once(lambda _: p.dismiss(), 3)
- 
-    def on_stop(self):
-        pass
  
  
 if __name__ == "__main__":
