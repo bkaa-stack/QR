@@ -11,31 +11,22 @@ jobs:
     timeout-minutes: 90
  
     steps:
-      # 1. Checkout code
       - name: Checkout source
         uses: actions/checkout@v4
  
-      # 2. Cache Buildozer directory (NDK, SDK, ...) - tang toc lan build sau
-      - name: Cache Buildozer global directory
+      - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
+          restore-keys: buildozer-${{ runner.os }}-
  
-      # 3. Dung buildozer-action - xu ly toan bo SDK/NDK tu dong
-      - name: Build with buildozer-action
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          command: android debug
-          buildozer_version: stable
+      - name: Build APK with melanke/buildozer-action
+        uses: melanke/buildozer-action@v1
  
-      # 4. Upload APK
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: QRScanner-APK
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
           retention-days: 30
