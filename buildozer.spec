@@ -21,6 +21,9 @@ android.archs = arm64-v8a
  
 android.allow_backup = True
  
+# Bundle ZXing Android Embedded - khong can cai them app de quet
+android.gradle_dependencies = com.journeyapps:zxing-android-embedded:4.3.0
+ 
 [buildozer]
 log_level = 2
 warn_on_root = 1
