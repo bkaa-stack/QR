@@ -17,16 +17,6 @@ from kivy.utils import platform
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty, ListProperty
  
-# Chi kiem tra PythonActivity o day - IntentIntegrator load lazy trong start_scan
-ANDROID_OK = False
-if platform == "android":
-    try:
-        from jnius import autoclass
-        PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        ANDROID_OK = True
-    except Exception:
-        ANDROID_OK = False
- 
 KV = """
 ScreenManager:
     ScanScreen:
@@ -84,7 +74,7 @@ ScreenManager:
  
             Label:
                 id: scan_status
-                text: "Chua quet ma nao"
+                text: "San sang quet"
                 font_size: "14sp"
                 color: 0.46, 0.46, 0.46, 1
                 halign: "center"
@@ -236,11 +226,11 @@ class QRScanApp(App):
         return Builder.load_string(KV)
  
     def on_start(self):
-        # Dang ky nhan ket qua tu ZXing
-        if ANDROID_OK:
+        # Dang ky callback nhan ket qua tu ZXing - hoan toan lazy
+        if platform == "android":
             try:
-                activity = PythonActivity.mActivity
-                activity.bind(on_activity_result=self._on_scan_result)
+                from android.activity import bind as android_bind
+                android_bind(on_activity_result=self._on_scan_result)
             except Exception:
                 pass
         # Load data da luu
@@ -268,7 +258,9 @@ class QRScanApp(App):
     def _save_data(self):
         try:
             path = _data_path()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            folder = os.path.dirname(path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.scan_data, f, ensure_ascii=False)
         except Exception:
@@ -281,19 +273,19 @@ class QRScanApp(App):
     def go_scan(self):
         self.root.current = "scan"
  
-    # ── Scan via ZXing Android Embedded ──────────────────────────────────────
+    # ── Scan via ZXing Android Embedded (hoan toan lazy) ─────────────────────
     def start_scan(self):
-        if not ANDROID_OK:
+        if platform != "android":
             self._show_manual_input()
             return
         try:
-            from jnius import autoclass as _ac
-            IntentIntegrator = _ac(
+            from jnius import autoclass
+            PythonActivity   = autoclass("org.kivy.android.PythonActivity")
+            IntentIntegrator = autoclass(
                 "com.google.zxing.integration.android.IntentIntegrator")
             activity   = PythonActivity.mActivity
             integrator = IntentIntegrator(activity)
-            integrator.setDesiredBarcodeFormats(
-                IntentIntegrator.ALL_CODE_TYPES)
+            integrator.setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
             integrator.setPrompt("Huong camera vao ma QR hoac Barcode")
             integrator.setCameraId(0)
             integrator.setBeepEnabled(True)
@@ -301,17 +293,18 @@ class QRScanApp(App):
             integrator.setOrientationLocked(False)
             integrator.initiateScan()
         except Exception as e:
-            self._update_status(f"Loi mo camera: {e}")
+            self._update_status(f"Loi: {e}")
  
-    def _on_scan_result(self, requestCode, resultCode, data):
-        if data is None:
+    def _on_scan_result(self, request_code, result_code, intent):
+        """Callback tu android.activity.bind - nhan ket qua ZXing."""
+        if intent is None:
             return
         try:
-            from jnius import autoclass as _ac
-            IntentResult = _ac(
+            from jnius import autoclass
+            IntentResult = autoclass(
                 "com.google.zxing.integration.android.IntentResult")
             result = IntentResult.parseActivityResult(
-                requestCode, resultCode, data)
+                request_code, result_code, intent)
             if result is not None:
                 content = result.getContents()
                 fmt     = result.getFormatName() or "QRCODE"
