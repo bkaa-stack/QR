@@ -273,44 +273,51 @@ class QRScanApp(App):
     def go_scan(self):
         self.root.current = "scan"
  
-    # ── Scan via ZXing Android Embedded (hoan toan lazy) ─────────────────────
+    # ── Scan via direct Intent toi CaptureActivity ───────────────────────────
+    # Request code rieng de nhan dung ket qua
+    SCAN_REQUEST_CODE = 49374
+ 
     def start_scan(self):
         if platform != "android":
             self._show_manual_input()
             return
+        # startActivityForResult phai chay tren Android UI thread
         try:
-            from jnius import autoclass
-            PythonActivity   = autoclass("org.kivy.android.PythonActivity")
-            IntentIntegrator = autoclass(
-                "com.google.zxing.integration.android.IntentIntegrator")
-            activity   = PythonActivity.mActivity
-            integrator = IntentIntegrator(activity)
-            integrator.setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
-            integrator.setPrompt("Huong camera vao ma QR hoac Barcode")
-            integrator.setCameraId(0)
-            integrator.setBeepEnabled(True)
-            integrator.setBarcodeImageEnabled(False)
-            integrator.setOrientationLocked(False)
-            integrator.initiateScan()
-        except Exception as e:
-            self._update_status(f"Loi: {e}")
+            from android.runnable import run_on_ui_thread
+        except Exception:
+            self._update_status("Loi: khong load duoc android.runnable")
+            return
+ 
+        @run_on_ui_thread
+        def _do_scan():
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                Intent         = autoclass("android.content.Intent")
+                activity       = PythonActivity.mActivity
+                intent         = Intent()
+                intent.setClassName(
+                    activity,
+                    "com.journeyapps.barcodescanner.CaptureActivity")
+                activity.startActivityForResult(intent, self.SCAN_REQUEST_CODE)
+            except Exception as e:
+                Clock.schedule_once(
+                    lambda _: self._update_status(f"Loi: {e}"), 0)
+ 
+        _do_scan()
  
     def _on_scan_result(self, request_code, result_code, intent):
         """Callback tu android.activity.bind - nhan ket qua ZXing."""
-        if intent is None:
+        if request_code != self.SCAN_REQUEST_CODE:
+            return
+        if result_code != -1 or intent is None:
             return
         try:
-            from jnius import autoclass
-            IntentResult = autoclass(
-                "com.google.zxing.integration.android.IntentResult")
-            result = IntentResult.parseActivityResult(
-                request_code, result_code, intent)
-            if result is not None:
-                content = result.getContents()
-                fmt     = result.getFormatName() or "QRCODE"
-                if content:
-                    Clock.schedule_once(
-                        lambda _: self._register_code(content, fmt), 0)
+            content = intent.getStringExtra("SCAN_RESULT")
+            fmt     = intent.getStringExtra("SCAN_RESULT_FORMAT") or "QRCODE"
+            if content:
+                Clock.schedule_once(
+                    lambda _: self._register_code(content, fmt), 0)
         except Exception as e:
             Clock.schedule_once(
                 lambda _: self._update_status(f"Loi doc ket qua: {e}"), 0)
