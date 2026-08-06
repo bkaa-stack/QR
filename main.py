@@ -16,23 +16,19 @@ from kivy.utils import platform
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty, ListProperty
  
-from xlsx_writer import write_xlsx
- 
-# Android camera / intent imports
+# Android imports - chi load khi chay tren Android
+ANDROID_OK = False
 if platform == "android":
-    from android.runnable import run_on_ui_thread
-    from jnius import autoclass, cast
-    PythonActivity = autoclass("org.kivy.android.PythonActivity")
-    Intent         = autoclass("android.content.Intent")
-    Uri            = autoclass("android.net.Uri")
-    BUILD_VERSION  = autoclass("android.os.Build$VERSION")
-    ANDROID_OK     = True
-else:
-    ANDROID_OK = False
+    try:
+        from jnius import autoclass
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        Intent         = autoclass("android.content.Intent")
+        ANDROID_OK     = True
+    except Exception:
+        ANDROID_OK = False
  
 KV = """
 ScreenManager:
-    id: sm
     ScanScreen:
         name: "scan"
     ListScreen:
@@ -42,7 +38,6 @@ ScreenManager:
     BoxLayout:
         orientation: "vertical"
  
-        # Header
         BoxLayout:
             size_hint_y: None
             height: "56dp"
@@ -66,7 +61,6 @@ ScreenManager:
                 background_color: 0.263, 0.627, 0.278, 1
                 on_release: app.go_list()
  
-        # Center: scan button
         BoxLayout:
             orientation: "vertical"
             padding: "24dp"
@@ -107,7 +101,6 @@ ScreenManager:
     BoxLayout:
         orientation: "vertical"
  
-        # Header
         BoxLayout:
             size_hint_y: None
             height: "56dp"
@@ -144,7 +137,6 @@ ScreenManager:
                 background_color: 0.898, 0.224, 0.208, 1
                 on_release: app.clear_all()
  
-        # List
         ScrollView:
             GridLayout:
                 id: qr_list
@@ -154,7 +146,6 @@ ScreenManager:
                 spacing: "1dp"
                 padding: "4dp"
  
-        # Footer
         BoxLayout:
             size_hint_y: None
             height: "36dp"
@@ -240,7 +231,6 @@ class QRScanApp(App):
     # ── Scan via Android Intent (ZXing) ───────────────────────────────────────
     def start_scan(self):
         if not ANDROID_OK:
-            # Desktop test: nhap thu cong
             self._show_manual_input()
             return
         try:
@@ -248,7 +238,6 @@ class QRScanApp(App):
             intent   = Intent("com.google.zxing.client.android.SCAN")
             intent.putExtra("SCAN_MODE", "QR_CODE_MODE,PRODUCT_MODE")
             activity.startActivityForResult(intent, 0)
-            # Ket qua se duoc xu ly trong on_activity_result
             activity.bind(on_activity_result=self._on_scan_result)
         except Exception as e:
             self._update_status(f"Loi: {e}\nCan cai ZXing Barcode Scanner")
@@ -268,11 +257,11 @@ class QRScanApp(App):
         from kivy.uix.textinput import TextInput
         from kivy.uix.button import Button
  
-        box   = BoxLayout(orientation="vertical", padding=12, spacing=8)
-        ti    = TextInput(hint_text="Nhap noi dung ma QR...",
-                          multiline=False, size_hint_y=None, height="44dp")
-        btn   = Button(text="Them", size_hint_y=None, height="44dp",
-                       background_color=(0.098, 0.463, 0.824, 1))
+        box = BoxLayout(orientation="vertical", padding=12, spacing=8)
+        ti  = TextInput(hint_text="Nhap noi dung ma QR...",
+                        multiline=False, size_hint_y=None, height="44dp")
+        btn = Button(text="Them", size_hint_y=None, height="44dp",
+                     background_color=(0.098, 0.463, 0.824, 1))
         box.add_widget(ti)
         box.add_widget(btn)
  
@@ -329,13 +318,23 @@ class QRScanApp(App):
         threading.Thread(target=self._write_excel, daemon=True).start()
  
     def _write_excel(self):
+        try:
+            from xlsx_writer import write_xlsx
+        except Exception as e:
+            Clock.schedule_once(
+                lambda _: self._toast(f"Loi import xlsx_writer: {e}"), 0)
+            return
+ 
         if platform == "android":
-            from android.storage import primary_external_storage_path
-            folder = os.path.join(primary_external_storage_path(), "Download")
+            try:
+                from android.storage import primary_external_storage_path
+                folder = os.path.join(primary_external_storage_path(), "Download")
+            except Exception:
+                folder = "/sdcard/Download"
         else:
             folder = os.path.expanduser("~")
-        os.makedirs(folder, exist_ok=True)
  
+        os.makedirs(folder, exist_ok=True)
         fname = f"QR_Scan_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         path  = os.path.join(folder, fname)
  
