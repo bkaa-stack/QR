@@ -1,10 +1,11 @@
 """
 QR Code & Barcode Scanner - Android App
-Dung ZXing Android Embedded (bundle trong APK) - khong can cai them app.
+ZXing Android Embedded (bundle trong APK) + luu data JSON.
 Build: buildozer android debug
 """
  
 import datetime
+import json
 import os
 import threading
  
@@ -16,17 +17,14 @@ from kivy.utils import platform
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty, ListProperty
  
-# Android imports - chi load khi chay tren Android
+# Chi kiem tra PythonActivity o day - IntentIntegrator load lazy trong start_scan
 ANDROID_OK = False
 if platform == "android":
     try:
         from jnius import autoclass
-        PythonActivity   = autoclass("org.kivy.android.PythonActivity")
-        # ZXing Android Embedded - bundle trong APK, khong can cai them
-        IntentIntegrator = autoclass(
-            "com.google.zxing.integration.android.IntentIntegrator")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
         ANDROID_OK = True
-    except Exception as _e:
+    except Exception:
         ANDROID_OK = False
  
 KV = """
@@ -218,6 +216,19 @@ class QRItem(BoxLayout):
     bg_color  = ListProperty([1, 1, 1, 1])
  
  
+def _data_path():
+    """Duong dan file luu data JSON."""
+    if platform == "android":
+        try:
+            from android.storage import app_storage_path
+            base = app_storage_path()
+        except Exception:
+            base = "/sdcard"
+    else:
+        base = os.path.expanduser("~")
+    return os.path.join(base, "qrscanner_data.json")
+ 
+ 
 class QRScanApp(App):
     def build(self):
         self.scan_data = []
@@ -225,29 +236,62 @@ class QRScanApp(App):
         return Builder.load_string(KV)
  
     def on_start(self):
-        # Dang ky nhan ket qua quét tu ZXing Embedded
+        # Dang ky nhan ket qua tu ZXing
         if ANDROID_OK:
             try:
                 activity = PythonActivity.mActivity
                 activity.bind(on_activity_result=self._on_scan_result)
             except Exception:
                 pass
+        # Load data da luu
+        self._load_data()
  
+    # ── Persistence ───────────────────────────────────────────────────────────
+    def _load_data(self):
+        path = _data_path()
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            for d in saved:
+                self.scan_data.append(d)
+                self.seen_qrs.add(d["qr"])
+                self._add_item_to_list(d)
+            count = len(self.scan_data)
+            if count:
+                self.root.get_screen("list").ids.count_label.text = f"{count} ma"
+                self._update_status(f"Da tai {count} ma tu lan truoc")
+        except Exception:
+            pass
+ 
+    def _save_data(self):
+        try:
+            path = _data_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.scan_data, f, ensure_ascii=False)
+        except Exception:
+            pass
+ 
+    # ── Navigation ────────────────────────────────────────────────────────────
     def go_list(self):
         self.root.current = "list"
  
     def go_scan(self):
         self.root.current = "scan"
  
-    # ── Scan via ZXing Android Embedded (bundle trong APK) ────────────────────
+    # ── Scan via ZXing Android Embedded ──────────────────────────────────────
     def start_scan(self):
         if not ANDROID_OK:
             self._show_manual_input()
             return
         try:
-            activity    = PythonActivity.mActivity
-            integrator  = IntentIntegrator(activity)
-            # Bat tat ca loai barcode
+            from jnius import autoclass as _ac
+            IntentIntegrator = _ac(
+                "com.google.zxing.integration.android.IntentIntegrator")
+            activity   = PythonActivity.mActivity
+            integrator = IntentIntegrator(activity)
             integrator.setDesiredBarcodeFormats(
                 IntentIntegrator.ALL_CODE_TYPES)
             integrator.setPrompt("Huong camera vao ma QR hoac Barcode")
@@ -257,10 +301,9 @@ class QRScanApp(App):
             integrator.setOrientationLocked(False)
             integrator.initiateScan()
         except Exception as e:
-            self._update_status(f"Loi: {e}")
+            self._update_status(f"Loi mo camera: {e}")
  
     def _on_scan_result(self, requestCode, resultCode, data):
-        RESULT_OK = -1
         if data is None:
             return
         try:
@@ -312,18 +355,21 @@ class QRScanApp(App):
         self.seen_qrs.add(data)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         idx = len(self.scan_data) + 1
-        self.scan_data.append({"index": idx, "type": code_type,
-                                "qr": data, "time": now})
+        entry = {"index": idx, "type": code_type, "qr": data, "time": now}
+        self.scan_data.append(entry)
+        self._add_item_to_list(entry)
         self._update_status(f"Da quet {idx} ma")
+        self._save_data()
  
+    def _add_item_to_list(self, d):
+        idx  = d["index"]
         item = QRItem(
             idx_text  = str(idx),
-            qr_text   = data[:50] + ("..." if len(data) > 50 else ""),
-            time_text = now,
+            qr_text   = d["qr"][:50] + ("..." if len(d["qr"]) > 50 else ""),
+            time_text = d["time"],
             bg_color  = [0.89, 0.95, 1, 1] if idx % 2 == 0 else [1, 1, 1, 1])
- 
         self.root.get_screen("list").ids.qr_list.add_widget(item)
-        self.root.get_screen("list").ids.count_label.text = f"{idx} ma"
+        self.root.get_screen("list").ids.count_label.text = f"{len(self.scan_data)} ma"
  
     def _update_status(self, msg):
         try:
@@ -337,6 +383,7 @@ class QRScanApp(App):
         self.root.get_screen("list").ids.qr_list.clear_widgets()
         self.root.get_screen("list").ids.count_label.text = "0 ma"
         self._update_status("Chua quet ma nao")
+        self._save_data()
  
     # ── Excel export ──────────────────────────────────────────────────────────
     def export_excel(self):
