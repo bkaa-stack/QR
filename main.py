@@ -16,12 +16,7 @@ from kivy.utils import platform
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty, ListProperty
  
-try:
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    OPENPYXL_OK = True
-except ImportError:
-    OPENPYXL_OK = False
+from xlsx_writer import write_xlsx
  
 # Android camera / intent imports
 if platform == "android":
@@ -328,9 +323,6 @@ class QRScanApp(App):
  
     # ── Excel export ──────────────────────────────────────────────────────────
     def export_excel(self):
-        if not OPENPYXL_OK:
-            self._toast("Thieu openpyxl!")
-            return
         if not self.scan_data:
             self._toast("Chua co du lieu.")
             return
@@ -348,56 +340,7 @@ class QRScanApp(App):
         path  = os.path.join(folder, fname)
  
         try:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "QR Scan Data"
- 
-            thin   = Side(style="thin", color="B0BEC5")
-            border = Border(left=thin, right=thin, top=thin, bottom=thin)
-            hdr_fill  = PatternFill("solid", fgColor="1976D2")
-            hdr_font  = Font(bold=True, color="FFFFFF", size=11, name="Calibri")
-            hdr_align = Alignment(horizontal="center", vertical="center")
-            even_fill = PatternFill("solid", fgColor="E3F2FD")
- 
-            # Title
-            ws.merge_cells("A1:C1")
-            tc = ws["A1"]
-            tc.value     = "QR Code & Barcode Scan Report"
-            tc.font      = Font(bold=True, size=14, color="1565C0", name="Calibri")
-            tc.alignment = Alignment(horizontal="center")
-            ws.row_dimensions[1].height = 28
-            ws["A2"] = "Ngay xuat:"
-            ws["B2"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            ws["A3"] = "Tong so ma:"
-            ws["B3"] = len(self.scan_data)
- 
-            # Header: STT | QRCode | Time
-            for col, h in enumerate(["STT", "QRCode", "Time"], 1):
-                cell = ws.cell(row=5, column=col, value=h)
-                cell.font      = hdr_font
-                cell.fill      = hdr_fill
-                cell.alignment = hdr_align
-                cell.border    = border
-            ws.row_dimensions[5].height = 22
- 
-            # Data
-            for row_idx, d in enumerate(self.scan_data, 6):
-                fill = even_fill if row_idx % 2 == 0 else PatternFill()
-                for c, v in [(1, d["index"]), (2, d["qr"]), (3, d["time"])]:
-                    cell = ws.cell(row=row_idx, column=c, value=v)
-                    cell.fill      = fill
-                    cell.border    = border
-                    cell.font      = Font(name="Calibri", size=10)
-                    cell.alignment = Alignment(
-                        vertical="center",
-                        horizontal="center" if c in (1, 3) else "left",
-                        wrap_text=(c == 2))
- 
-            ws.column_dimensions["A"].width = 8
-            ws.column_dimensions["B"].width = 60
-            ws.column_dimensions["C"].width = 22
-            ws.freeze_panes = "A6"
-            wb.save(path)
+            write_xlsx(path, self.scan_data)
             Clock.schedule_once(
                 lambda _: self._toast(f"Da luu: {fname}"), 0)
         except Exception as ex:
