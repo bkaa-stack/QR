@@ -1,6 +1,6 @@
 """
 QR Code & Barcode Scanner - Android App
-Dung Android Intent de quet QR/Barcode (ZXing app) + xuat Excel.
+Dung ZXing Android Embedded (bundle trong APK) - khong can cai them app.
 Build: buildozer android debug
 """
  
@@ -21,10 +21,12 @@ ANDROID_OK = False
 if platform == "android":
     try:
         from jnius import autoclass
-        PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        Intent         = autoclass("android.content.Intent")
-        ANDROID_OK     = True
-    except Exception:
+        PythonActivity   = autoclass("org.kivy.android.PythonActivity")
+        # ZXing Android Embedded - bundle trong APK, khong can cai them
+        IntentIntegrator = autoclass(
+            "com.google.zxing.integration.android.IntentIntegrator")
+        ANDROID_OK = True
+    except Exception as _e:
         ANDROID_OK = False
  
 KV = """
@@ -91,9 +93,9 @@ ScreenManager:
                 text_size: self.size
  
             Label:
-                text: "* Can cai ZXing Barcode Scanner tren dien thoai"
+                text: "Ho tro: QR Code, EAN-13, Code128, UPC-A, v.v."
                 font_size: "12sp"
-                color: 0.7, 0.5, 0.1, 1
+                color: 0.2, 0.6, 0.2, 1
                 halign: "center"
                 text_size: self.size
  
@@ -222,36 +224,62 @@ class QRScanApp(App):
         self.seen_qrs  = set()
         return Builder.load_string(KV)
  
+    def on_start(self):
+        # Dang ky nhan ket qua quét tu ZXing Embedded
+        if ANDROID_OK:
+            try:
+                activity = PythonActivity.mActivity
+                activity.bind(on_activity_result=self._on_scan_result)
+            except Exception:
+                pass
+ 
     def go_list(self):
         self.root.current = "list"
  
     def go_scan(self):
         self.root.current = "scan"
  
-    # ── Scan via Android Intent (ZXing) ───────────────────────────────────────
+    # ── Scan via ZXing Android Embedded (bundle trong APK) ────────────────────
     def start_scan(self):
         if not ANDROID_OK:
             self._show_manual_input()
             return
         try:
-            activity = PythonActivity.mActivity
-            intent   = Intent("com.google.zxing.client.android.SCAN")
-            intent.putExtra("SCAN_MODE", "QR_CODE_MODE,PRODUCT_MODE")
-            activity.startActivityForResult(intent, 0)
-            activity.bind(on_activity_result=self._on_scan_result)
+            activity    = PythonActivity.mActivity
+            integrator  = IntentIntegrator(activity)
+            # Bat tat ca loai barcode
+            integrator.setDesiredBarcodeFormats(
+                IntentIntegrator.ALL_CODE_TYPES)
+            integrator.setPrompt("Huong camera vao ma QR hoac Barcode")
+            integrator.setCameraId(0)
+            integrator.setBeepEnabled(True)
+            integrator.setBarcodeImageEnabled(False)
+            integrator.setOrientationLocked(False)
+            integrator.initiateScan()
         except Exception as e:
-            self._update_status(f"Loi: {e}\nCan cai ZXing Barcode Scanner")
+            self._update_status(f"Loi: {e}")
  
     def _on_scan_result(self, requestCode, resultCode, data):
         RESULT_OK = -1
-        if resultCode == RESULT_OK and data is not None:
-            result = data.getStringExtra("SCAN_RESULT")
-            fmt    = data.getStringExtra("SCAN_RESULT_FORMAT") or "QRCODE"
-            if result:
-                Clock.schedule_once(
-                    lambda _: self._register_code(result, fmt), 0)
+        if data is None:
+            return
+        try:
+            from jnius import autoclass as _ac
+            IntentResult = _ac(
+                "com.google.zxing.integration.android.IntentResult")
+            result = IntentResult.parseActivityResult(
+                requestCode, resultCode, data)
+            if result is not None:
+                content = result.getContents()
+                fmt     = result.getFormatName() or "QRCODE"
+                if content:
+                    Clock.schedule_once(
+                        lambda _: self._register_code(content, fmt), 0)
+        except Exception as e:
+            Clock.schedule_once(
+                lambda _: self._update_status(f"Loi doc ket qua: {e}"), 0)
  
-    # ── Desktop fallback: manual input popup ──────────────────────────────────
+    # ── Desktop fallback ──────────────────────────────────────────────────────
     def _show_manual_input(self):
         from kivy.uix.popup import Popup
         from kivy.uix.textinput import TextInput
